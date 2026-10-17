@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#d9467a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="令翠学マップ">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>令翠学 方位マップ</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#f6f5f1; --panel:#fff; --ink:#1f2328; --muted:#6b7280; --line:#e5e3dc; --accent:#d9467a; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  .app { display:grid; grid-template-columns: 360px 1fr; height:100vh; }
+  aside { background:var(--panel); border-right:1px solid var(--line); overflow-y:auto; padding:16px; }
+  #mapwrap, #map { width:100%; height:100%; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:12px; margin-bottom:14px; }
+  section { border-top:1px solid var(--line); padding:12px 0; }
+  label.t { display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px; }
+  input[type=text], input[type=number], select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
+  .row { display:flex; gap:6px; align-items:center; }
+  .row > * { flex:1; min-width:0; }
+  button { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; font-size:13px; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .stars { display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
+  .stars button { padding:7px 4px; font-size:13px; display:flex; align-items:center; gap:6px; justify-content:center; }
+  .stars button.on { outline:2px solid var(--accent); font-weight:700; }
+  .dot { width:12px; height:12px; border-radius:50%; border:1px solid #0003; flex:none; }
+  #wheel { width:100%; max-width:330px; display:block; margin:4px auto 0; }
+  #wheel .sec { cursor:pointer; }
+  .hint { font-size:11px; color:var(--muted); margin-top:6px; line-height:1.5; }
+  .chk { display:flex; gap:6px; align-items:center; font-size:13px; margin:4px 0; }
+  .info { font-size:13px; line-height:1.6; background:#fdf6f8; border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-top:8px; min-height:40px; }
+  .now { font-size:13px; line-height:1.7; margin-top:8px; }
+  .now b { color:var(--accent); }
+  .maplabel { font-size:12px; font-weight:700; text-align:center; white-space:nowrap; color:#111;
+    text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; pointer-events:none; line-height:1.25; transform:translate(-50%,-50%); position:absolute; }
+  .maplabel .p { font-size:11px; color:#9d174d; }
+  .maplabel .n { font-size:10px; color:#fff; background:var(--accent); border-radius:4px; padding:0 4px; text-shadow:none; }
+  .leaflet-div-icon.lbl { background:none; border:none; }
+  .pinbox { width:64px; height:30px; display:flex; align-items:flex-end; justify-content:center; font-size:13px; font-weight:800; color:#111;
+    text-shadow:0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; cursor:grab; white-space:nowrap; }
+  .pinbox:active { cursor:grabbing; }
+  .leaflet-div-icon.lbl .maplabel { position:relative; }
+  #mapwrap { position:relative; }
+  .grip { display:none; }
+  #maptip { position:absolute; z-index:900; top:10px; left:56px; right:10px; max-width:420px; background:#fff; border:1px solid var(--line);
+    border-radius:10px; box-shadow:0 4px 16px #0002; padding:8px 34px 8px 12px; font-size:13px; line-height:1.55; display:none; }
+  #maptip.show { display:block; }
+  #maptip .x { position:absolute; top:4px; right:4px; border:none; background:none; font-size:18px; padding:2px 8px; color:var(--muted); }
+
+  /* ---- スマホ: 地図を全画面、操作パネルは下から引き出すシート ---- */
+  @media (max-width: 760px) {
+    .app { display:block; height:100dvh; }
+    #mapwrap { position:fixed; inset:0; height:auto; }
+    aside { position:fixed; left:0; right:0; bottom:0; z-index:1000; border-right:none; border-radius:16px 16px 0 0;
+      box-shadow:0 -4px 20px #0002; max-height:88dvh; padding:0 14px calc(16px + env(safe-area-inset-bottom));
+      overflow:hidden; transform:translateY(calc(100% - var(--peek, 190px))); transition:transform .25s ease; }
+    aside.open { transform:none; overflow-y:auto; }
+    .grip { display:flex; position:sticky; top:0; z-index:2; background:var(--panel); width:100%; border:none; border-radius:0;
+      padding:8px 0 6px; flex-direction:column; align-items:center; gap:4px; font-size:11px; color:var(--muted); }
+    .grip::before { content:""; width:40px; height:5px; border-radius:3px; background:#d4d4d8; }
+    h1, .sub { display:none; }
+    section:first-of-type { border-top:none; padding-top:2px; }
+    input[type=text], input[type=number], select { font-size:16px; } /* iOSの自動ズーム防止 */
+    button { padding:10px 12px; font-size:14px; }
+    .stars { display:flex; overflow-x:auto; gap:6px; padding:2px 2px 6px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+    .stars::-webkit-scrollbar { display:none; }
+    .stars button { flex:none; padding:9px 12px; }
+    #addrHint { display:none; }
+    section:first-of-type label.t { display:none; }
+    section:first-of-type .row button { padding:8px 10px; font-size:13px; }
+    .maplabel { font-size:10px; }
+    .maplabel .p { font-size:9px; }
+    .maplabel .n { font-size:9px; }
+    #maptip { left:50px; top:calc(10px + env(safe-area-inset-top)); }
+    .leaflet-top { top:env(safe-area-inset-top); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside id="sheet">
+    <button class="grip" id="grip" type="button"><span id="gripText">詳細・設定を開く</span></button>
+    <h1>令翠学 方位マップ</h1>
+    <div class="sub">拠点を中心に令翠学の盤(12宿星)を地図へ重ねます</div>
+
+    <section>
+      <label class="t">拠点(住所・施設名)</label>
+      <div class="row"><input id="addr" type="text" placeholder="例: 東京都千代田区丸の内1-1"><button class="primary" id="go" style="flex:none">設定</button></div>
+      <div class="row" style="margin-top:6px"><button id="here">現在地を拠点に</button><button id="mapCenter">地図の中心を拠点に</button></div>
+      <div class="hint" id="addrHint">📍ピンをドラッグしても拠点を移動できます(地図のクリックやスクロールでは動きません)。</div>
+    </section>
+
+    <section>
+      <label class="t">宿星を選ぶ</label>
+      <div class="stars" id="stars"></div>
+      <label class="t" style="margin-top:10px">生年月日から宿星を出す</label>
+      <div class="row">
+        <input id="by" type="number" placeholder="年" min="1900" max="2100">
+        <input id="bm" type="number" placeholder="月" min="1" max="12">
+        <input id="bd" type="number" placeholder="日" min="1" max="31">
+        <button id="calc" style="flex:none">判定</button>
+      </div>
+      <div class="now" id="now"></div>
+    </section>
+
+    <section>
+      <label class="t">盤</label>
+      <svg id="wheel" viewBox="-190 -190 380 380"></svg>
+      <div class="info" id="info">盤か地図の区画を選ぶと詳細が出ます。</div>
+    </section>
+
+    <section>
+      <label class="t">表示設定</label>
+      <label class="t" style="font-weight:400">外周の表示</label>
+      <select id="mode">
+        <option value="phase">選んだ星の運気周期(開拓期〜精算期)</option>
+        <option value="star">宿星名のみ</option>
+      </select>
+      <label class="t" style="font-weight:400;margin-top:8px">盤の向き</label>
+      <select id="rot">
+        <option value="30">北=子と丑の境(令翠学)</option>
+        <option value="0">北=丑と寅の境(サイトの図の向き)</option>
+      </select>
+      <label class="t" style="font-weight:400;margin-top:8px">北の基準</label>
+      <select id="north">
+        <option value="0">真北(地図の北)</option>
+        <option value="-7.5">磁北(西偏7.5°・関東目安)</option>
+        <option value="-6">磁北(西偏6°・九州目安)</option>
+        <option value="-9">磁北(西偏9°・北海道目安)</option>
+      </select>
+      <label class="t" style="font-weight:400;margin-top:8px">表の大きさ</label>
+      <select id="sizeMode">
+        <option value="screen">画面に合わせる(ズームしても同じ大きさ)</option>
+        <option value="km">距離で固定(半径km・地図と一緒に拡大縮小)</option>
+      </select>
+      <div class="row" id="pctRow" style="margin-top:6px"><input id="pct" type="range" min="15" max="48" step="1" value="40"><span id="pv" style="flex:none;width:72px;text-align:right">40%</span></div>
+      <div class="row" id="kmRow" style="margin-top:6px"><input id="radius" type="range" min="0.5" max="300" step="0.5" value="10"><span id="rv" style="flex:none;width:72px;text-align:right">10km</span></div>
+      <div class="chk"><input type="checkbox" id="inner" checked><span>内側の令星(6区分)を表示</span></div>
+      <div class="chk"><input type="checkbox" id="labels" checked><span>地図上に文字を表示</span></div>
+      <label class="t" style="font-weight:400;margin-top:8px">塗りの濃さ</label>
+      <input id="opacity" type="range" min="0.05" max="0.8" step="0.05" value="0.35" style="width:100%">
+    </section>
+
+    <section>
+      <label class="t">地図エンジン</label>
+      <div class="hint" style="margin-top:0">Google Maps APIキーを入れるとGoogleマップで表示します(未入力時はOpenStreetMap)。キーはこのブラウザ内にのみ保存。</div>
+      <div class="row" style="margin-top:6px"><input id="gkey" type="text" placeholder="Google Maps APIキー"><button id="saveKey" style="flex:none">適用</button></div>
+    </section>
+  </aside>
+  <div id="mapwrap"><div id="map"></div><div id="maptip"><button class="x" id="tipX" aria-label="閉じる">×</button><div id="tipBody"></div></div></div>
+</div>
+
+<script>
+/* =====================================================================
+ * 令翠学ルール (reisui.jp の盤・宿星・運命周期より)
+ * ===================================================================== */
+const RULES = {
+  // 12宿星。番号は reisui.jp と同じ。盤上では1番(水星)から時計回りに30°ずつ並ぶ
+  stars: [
+    null,
+    { name: '水星',   color: '#000099', fg: '#fff' },
+    { name: '氷令星', color: '#000000', fg: '#fff' },
+    { name: '木星',   color: '#2b5e1b', fg: '#fff' },
+    { name: '海令星', color: '#88f877', fg: '#111' },
+    { name: '月星',   color: '#ec7232', fg: '#111' },
+    { name: '魚令星', color: '#fdfc52', fg: '#111' },
+    { name: '火星',   color: '#bb241d', fg: '#fff' },
+    { name: '冥令星', color: '#f0a0f0', fg: '#fff' },
+    { name: '金星',   color: '#8b3a17', fg: '#fff' },
+    { name: '小令星', color: '#ffffff', fg: '#111' },
+    { name: '土星',   color: '#8d1cf5', fg: '#fff' },
+    { name: '天令星', color: '#9a9a9a', fg: '#fff' },
+  ],
+  // 内側の6令星(各60°)。水令星が水星・氷令星の内側
+  // 十二支。宿星 i の位置は 支 (i+1): 水星=寅 … 土星=子, 天令星=丑
+  eto: ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'],
+  inner: ['水令星', '木令星', '月令星', '火令星', '金令星', '土令星'],
+  // 運命周期(12期)と四季
+  phases: [
+    { name: '開拓期', season: '春', desc: '運気サイクルの始まりの時期' },
+    { name: '生長期', season: '春', desc: '手間を惜しまず励む時期' },
+    { name: '決定期', season: '春', desc: '目的絞り選定する時期' },
+    { name: '健康期', season: '夏', desc: '一時休止の時期' },
+    { name: '人気期', season: '夏', desc: '能力を最大限に発揮する時期' },
+    { name: '油断期', season: '夏', desc: '変化・変動の時期' },
+    { name: '再開期', season: '秋', desc: '結果が形なり現れる時期' },
+    { name: '経済期', season: '秋', desc: '実績を形付ける時期' },
+    { name: '充実期', season: '秋', desc: '運気サイクルの完成を味わう時期' },
+    { name: '背信期', season: '冬', desc: '冬季の入口。己に固守せず休息の時期' },
+    { name: '令期',   season: '冬', desc: '運気が胎蔵する時期' },
+    { name: '精算期', season: '冬', desc: '次サイクルに向けて見直し、計画する時期' },
+  ],
+};
+const mod = (n, m) => ((n % m) + m) % m;
+const etoOf = i => RULES.eto[mod(i + 1, 12)];
+
+/* 選んだ星 s から見た、盤の位置 i の運気(自分の位置=開拓期、時計回りに進む) */
+const phaseAt = (s, i) => mod(i - s, 12);
+/* 年・月の運気(reisui.jp の表示と一致: 水星は寅年/2月が開拓期) */
+const yearPhase = (s, y) => mod(mod(y - 4, 12) - 2 - (s - 1), 12);
+const monthPhase = (s, m) => mod(m - 2 - (s - 1), 12);
+/* 生年月日→宿星: 日干支の旬(6区分)×生年の陰陽 */
+function starFromBirth(y, m, d) {
+  const a = Math.floor((14 - m) / 12), yy = y + 4800 - a, mm = m + 12 * a - 3;
+  const jdn = d + Math.floor((153 * mm + 2) / 5) + 365 * yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) - 32045;
+  const jun = Math.floor(mod(jdn + 49, 60) / 10);          // 0=甲子旬 … 5=甲寅旬
+  const base = [11, 9, 7, 5, 3, 1][jun];                  // 土・金・火・月・木・水
+  return base + (mod(y, 2) === 1 ? 1 : 0);                // 奇数年は令星側
+}
+/* ===================================================================== */
+
+const state = {
+  center: { lat: 35.681236, lng: 139.767125 },
+  star: 1, selected: null, mode: 'phase', rot: 30, north: 0,
+  radiusKm: 10, sizeMode: 'screen', screenPct: 40, inner: true, labels: true, opacity: 0.35,
+};
+try { const s = JSON.parse(localStorage.getItem('reisui-state3') || localStorage.getItem('reisui-state2') || '{}');
+  if (!localStorage.getItem('reisui-state3')) delete s.rot; Object.assign(state, s); } catch {}
+const save = () => { try { localStorage.setItem('reisui-state3', JSON.stringify(state)); } catch {} };
+
+/* ---- 幾何 ---- */
+const secRange = i => { const a0 = (i - 1) * 30 + state.rot + state.north; return [a0, a0 + 30]; };
+function dest(c, bearingDeg, km) {
+  const R = 6371, d = km / R, b = bearingDeg * Math.PI / 180;
+  const la = c.lat * Math.PI / 180, lo = c.lng * Math.PI / 180;
+  const la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b));
+  const lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2));
+  return { lat: la2 * 180 / Math.PI, lng: lo2 * 180 / Math.PI };
+}
+function annulus(a0, a1, r0, r1) {
+  const out = [], inn = [];
+  for (let a = a0; a <= a1 + 1e-9; a += 1) { out.push(dest(state.center, a, r1)); if (r0 > 0) inn.unshift(dest(state.center, a, r0)); }
+  return r0 > 0 ? out.concat(inn) : [state.center, ...out];
+}
+
+const now = new Date();
+const curYearSec = s => mod(s + yearPhase(s, now.getFullYear()) - 1, 12) + 1;   // 今年の運気が当たる位置
+const curMonthSec = s => mod(s + monthPhase(s, now.getMonth() + 1) - 1, 12) + 1;
+
+/* スマホではシートが地図の下側を覆うので、その分を除いて表を配置する */
+const isMobile = () => matchMedia('(max-width: 760px)').matches;
+let peek = 0;
+const coverBottom = () => isMobile() ? peek : 0;
+
+/* 表の半径(km)。画面モードではズームに応じて計算し、常に同じ画面上の大きさにする */
+function radiusKm() {
+  if (state.sizeMode === 'km' || !MAP) return state.radiusKm;
+  const el = $('map'), px = Math.min(el.clientWidth, el.clientHeight - coverBottom()) * state.screenPct / 100;
+  const kmPerPx = 40075.016686 * Math.cos(state.center.lat * Math.PI / 180) / Math.pow(2, MAP.zoom() + 8);
+  return px * kmPerPx;
+}
+function buildShapes() {
+  const R = radiusKm(), rIn = state.inner ? R * 0.58 : 0, shapes = [];
+  const ySec = curYearSec(state.star), mSec = curMonthSec(state.star);
+  for (let i = 1; i <= 12; i++) {
+    const st = RULES.stars[i], [a0, a1] = secRange(i), ph = RULES.phases[phaseAt(state.star, i)];
+    const tags = [i === state.star ? '本星' : '', i === ySec ? '今年' : '', i === mSec ? '今月' : ''].filter(Boolean);
+    shapes.push({ key: i, path: annulus(a0, a1, rIn, R), fill: st.color, sel: state.selected === i, own: i === state.star,
+      labelPos: dest(state.center, (a0 + a1) / 2, state.inner ? R * 0.8 : R * 0.65),
+      label: `${st.name}(${etoOf(i)})` + (state.mode === 'phase' ? `<br><span class="p">${ph.season}・${ph.name}</span>` : '') +
+        (tags.length ? `<br><span class="n">${tags.join('・')}</span>` : '') });
+  }
+  if (state.inner) RULES.inner.forEach((name, k) => {
+    const a0 = k * 60 + state.rot + state.north, a1 = a0 + 60;
+    shapes.push({ key: 'in' + k, path: annulus(a0, a1, R * 0.3, rIn), fill: '#ffffff', inner: true,
+      labelPos: dest(state.center, (a0 + a1) / 2, R * 0.44), label: name });
+  });
+  return { shapes, centerLabel: '拠点' };
+}
+
+/* ---- 地図アダプタ ---- */
+const LeafletMap = {
+  async init(el) {
+    await loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
+    this.map = L.map(el).setView([state.center.lat, state.center.lng], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(this.map);
+    this.layer = L.layerGroup().addTo(this.map);
+    this.map.on('zoomstart', () => { if (state.sizeMode === 'screen') this.layer.remove(); });
+    this.map.on('zoomend', () => { this.layer.addTo(this.map); if (state.sizeMode === 'screen') this.draw(buildShapes()); });
+    this.pin = L.marker([state.center.lat, state.center.lng], { draggable: true, zIndexOffset: 1000,
+      icon: L.divIcon({ className: 'lbl', html: '<div class="pinbox" title="ドラッグで拠点を移動">📍拠点</div>', iconSize: [64, 30], iconAnchor: [32, 28] }) }).addTo(this.map);
+    this.pin.on('drag', e => { const ll = e.target.getLatLng(); state.center = { lat: ll.lat, lng: ll.lng }; this.draw(buildShapes()); });
+    this.pin.on('dragend', () => render());
+  },
+  zoom() { return this.map.getZoom(); },
+  center() { const c = this.map.getCenter(); return { lat: c.lat, lng: c.lng }; },
+  pan(c) { const z = this.map.getZoom(), pt = this.map.project([c.lat, c.lng], z).add([0, coverBottom() / 2]);
+    this.map.setView(this.map.unproject(pt, z)); },
+  fit(km) { const n = dest(state.center, 0, km), s = dest(state.center, 180, km), e = dest(state.center, 90, km), w = dest(state.center, 270, km);
+    this.map.fitBounds([[s.lat, w.lng], [n.lat, e.lng]]); },
+  draw({ shapes, centerLabel }) {
+    this.layer.clearLayers();
+    for (const sh of shapes) {
+      const p = L.polygon(sh.path.map(p => [p.lat, p.lng]), { color: sh.sel || sh.own ? '#d9467a' : '#475569', weight: sh.sel ? 4 : sh.own ? 3 : 1,
+        fillColor: sh.fill, fillOpacity: sh.inner ? state.opacity * 0.5 : state.opacity }).addTo(this.layer);
+      if (!sh.inner) p.on('click', ev => { L.DomEvent.stop(ev); selectSec(sh.key); });
+      else p.on('click', ev => L.DomEvent.stop(ev));
+      if (state.labels) L.marker([sh.labelPos.lat, sh.labelPos.lng], { interactive: false,
+        icon: L.divIcon({ className: 'lbl', html: `<div class="maplabel">${sh.label}</div>`, iconSize: [0, 0] }) }).addTo(this.layer);
+    }
+    this.pin.setLatLng([state.center.lat, state.center.lng]);
+  },
+};
+
+const GoogleMap = {
+  async init(el, key) {
+    await loadScript(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&language=ja&region=JP`);
+    this.map = new google.maps.Map(el, { center: state.center, zoom: 12, mapTypeControl: true, streetViewControl: false });
+    this.geocoder = new google.maps.Geocoder();
+    this.items = [];
+    this.map.addListener('zoom_changed', () => { if (state.sizeMode === 'screen') this.draw(buildShapes()); });
+    this.pin = new google.maps.Marker({ position: state.center, map: this.map, draggable: true, label: { text: '拠点', fontWeight: '700' }, zIndex: 1000 });
+    this.pin.addListener('drag', e => { state.center = { lat: e.latLng.lat(), lng: e.latLng.lng() }; this.draw(buildShapes()); });
+    this.pin.addListener('dragend', () => render());
+    class Label extends google.maps.OverlayView {
+      constructor(pos, html) { super(); this.pos = pos; this.div = document.createElement('div'); this.div.className = 'maplabel'; this.div.innerHTML = html; }
+      onAdd() { this.getPanes().floatPane.appendChild(this.div); }
+      draw() { const p = this.getProjection().fromLatLngToDivPixel(new google.maps.LatLng(this.pos)); this.div.style.left = p.x + 'px'; this.div.style.top = p.y + 'px'; }
+      onRemove() { this.div.remove(); }
+    }
+    this.Label = Label;
+  },
+  zoom() { return this.map.getZoom(); },
+  center() { const c = this.map.getCenter(); return { lat: c.lat(), lng: c.lng() }; },
+  pan(c) { this.map.panTo(c); if (coverBottom()) this.map.panBy(0, coverBottom() / 2); },
+  fit(km) { const b = new google.maps.LatLngBounds(); [0, 90, 180, 270].forEach(a => b.extend(dest(state.center, a, km))); this.map.fitBounds(b); },
+  draw({ shapes, centerLabel }) {
+    this.items.forEach(i => i.setMap(null)); this.items = [];
+    for (const sh of shapes) {
+      const p = new google.maps.Polygon({ paths: sh.path, map: this.map, strokeColor: sh.sel || sh.own ? '#d9467a' : '#475569',
+        strokeWeight: sh.sel ? 4 : sh.own ? 3 : 1, fillColor: sh.fill, fillOpacity: sh.inner ? state.opacity * 0.5 : state.opacity });
+      if (!sh.inner) p.addListener('click', () => selectSec(sh.key));
+      this.items.push(p);
+      if (state.labels) { const l = new this.Label(sh.labelPos, sh.label); l.setMap(this.map); this.items.push(l); }
+    }
+    this.pin.setPosition(state.center);
+  },
+  geocode(q) { return new Promise((res, rej) => this.geocoder.geocode({ address: q }, (r, s) =>
+    s === 'OK' ? res({ lat: r[0].geometry.location.lat(), lng: r[0].geometry.location.lng(), name: r[0].formatted_address }) : rej(new Error(s)))); },
+};
+
+let MAP;
+function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed: ' + src)); document.head.appendChild(s); }); }
+async function geocode(q) {
+  if (MAP.geocode) return MAP.geocode(q);
+  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ja&q=${encodeURIComponent(q)}`).then(r => r.json());
+  if (!r.length) throw new Error('見つかりませんでした');
+  return { lat: +r[0].lat, lng: +r[0].lon, name: r[0].display_name };
+}
+
+/* ---- 盤(SVG) ---- */
+function arcPath(a0, a1, r0, r1) {
+  const p = (a, r) => { const t = (a - 90) * Math.PI / 180; return `${(r * Math.cos(t)).toFixed(2)} ${(r * Math.sin(t)).toFixed(2)}`; };
+  return `M${p(a0, r1)} A${r1} ${r1} 0 0 1 ${p(a1, r1)} L${p(a1, r0)} A${r0} ${r0} 0 0 0 ${p(a0, r0)}Z`;
+}
+function polar(a, r) { const t = (a - 90) * Math.PI / 180; return [r * Math.cos(t), r * Math.sin(t)]; }
+function drawWheel() {
+  const ySec = curYearSec(state.star), mSec = curMonthSec(state.star);
+  let svg = '', marks = '';
+  for (let i = 1; i <= 12; i++) {
+    const st = RULES.stars[i], a0 = (i - 1) * 30 + state.rot, a1 = a0 + 30, ph = RULES.phases[phaseAt(state.star, i)];
+    const hl = state.selected === i || state.star === i;
+    svg += `<path d="${arcPath(a0, a1, 165, 187)}" fill="#fdf6f8" stroke="#ddd"/>`;
+    const [ex, ey] = polar((a0 + a1) / 2, 176);
+    svg += `<text x="${ex}" y="${ey + 4}" text-anchor="middle" font-size="12" font-weight="700" fill="#9d174d">${etoOf(i)}</text>`;
+    svg += `<path class="sec" data-sec="${i}" d="${arcPath(a0, a1, 100, 165)}" fill="${st.color}" stroke="${hl ? '#d9467a' : '#bbb'}" stroke-width="${hl ? 3 : 1}"/>`;
+    const [x, y] = polar((a0 + a1) / 2, 133);
+    svg += `<text x="${x}" y="${y - (state.mode === 'phase' ? 5 : -4)}" text-anchor="middle" font-size="12" font-weight="700" fill="${st.fg}" pointer-events="none">${st.name}</text>`;
+    if (state.mode === 'phase') svg += `<text x="${x}" y="${y + 10}" text-anchor="middle" font-size="10" fill="${st.fg}" pointer-events="none">${ph.name}</text>`;
+    const mk = [i === ySec ? '年' : '', i === mSec ? '月' : ''].filter(Boolean).join('');
+    if (mk) { const [mx, my] = polar((a0 + a1) / 2, 108); marks += `<circle cx="${mx}" cy="${my}" r="8" fill="#d9467a"/><text x="${mx}" y="${my + 3.5}" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">${mk}</text>`; }
+  }
+  RULES.inner.forEach((name, k) => {
+    const a0 = k * 60 + state.rot, a1 = a0 + 60;
+    svg += `<path d="${arcPath(a0, a1, 55, 100)}" fill="#fff" stroke="#ccc"/>`;
+    const [x, y] = polar((a0 + a1) / 2, 78);
+    svg += `<text x="${x}" y="${y + 4}" text-anchor="middle" font-size="11" fill="#111">${name}</text>`;
+  });
+  svg += `<circle r="55" fill="#fff" stroke="#bbb" stroke-width="2"/><text y="-3" text-anchor="middle" font-size="11" fill="#666">拠点</text><text y="12" text-anchor="middle" font-size="10" fill="#d9467a">北↑</text>` + marks;
+  $('wheel').innerHTML = svg;
+}
+
+/* ---- UI ---- */
+const $ = id => document.getElementById(id);
+function render() {
+  $('stars').innerHTML = RULES.stars.slice(1).map((s, k) =>
+    `<button data-star="${k + 1}" class="${k + 1 === state.star ? 'on' : ''}"><span class="dot" style="background:${s.color}"></span>${s.name}</button>`).join('');
+  const s = state.star, yp = RULES.phases[yearPhase(s, now.getFullYear())], mp = RULES.phases[monthPhase(s, now.getMonth() + 1)];
+  $('now').innerHTML = `<b>${RULES.stars[s].name}</b> の ${now.getFullYear()}年は <b>${yp.name}</b>(${yp.season}季)/ ${now.getMonth() + 1}月は <b>${mp.name.replace('期', '月')}</b>`;
+  drawWheel();
+  const k = state.selected;
+  if (k) {
+    const ph = RULES.phases[phaseAt(s, k)], [a0, a1] = secRange(k);
+    $('info').innerHTML = $('tipBody').innerHTML = `<b>${RULES.stars[k].name}(${etoOf(k)})</b> の方位(${[a0, a1].map(a => mod(a, 360).toFixed(1) + '°').join(' 〜 ')})<br>` +
+      `${RULES.stars[s].name}から見て <b>${ph.season}・${ph.name}</b> — ${ph.desc}`;
+  }
+  $('maptip').classList.toggle('show', !!k);
+  $('rv').textContent = state.radiusKm + 'km'; $('pv').textContent = state.screenPct + '%';
+  $('pctRow').style.display = state.sizeMode === 'screen' ? '' : 'none';
+  $('kmRow').style.display = state.sizeMode === 'km' ? '' : 'none';
+  if (MAP) MAP.draw(buildShapes());
+  save();
+}
+function selectSec(k) { state.selected = state.selected === k ? null : k; render(); }
+$('tipX').onclick = () => { state.selected = null; render(); };
+
+/* ---- スマホ用シート ---- */
+function measurePeek() {
+  if (!isMobile()) return;
+  const sh = $('sheet'), st = $('stars');
+  if (!sh.classList.contains('open')) sh.scrollTop = 0;
+  peek = st.offsetTop + st.offsetHeight + 12;   // シート上端から星ボタン列の下端まで
+  sh.style.setProperty('--peek', peek + 'px');
+}
+function setSheet(open) {
+  const sh = $('sheet'); sh.classList.toggle('open', open);
+  if (!open) sh.scrollTop = 0;
+  $('gripText').textContent = open ? '閉じて地図を見る' : '詳細・設定を開く';
+}
+$('grip').onclick = () => setSheet(!$('sheet').classList.contains('open'));
+addEventListener('resize', () => { measurePeek(); if (MAP && state.sizeMode === 'screen') MAP.draw(buildShapes()); });
+
+$('stars').onclick = e => { const b = e.target.closest('[data-star]'); if (b) { state.star = +b.dataset.star; render(); } };
+$('wheel').onclick = e => { const p = e.target.closest('[data-sec]'); if (p) selectSec(+p.dataset.sec); };
+$('calc').onclick = () => {
+  const y = +$('by').value, m = +$('bm').value, d = +$('bd').value;
+  if (!y || !m || !d) return alert('生年月日を入力してください');
+  state.star = starFromBirth(y, m, d); render();
+};
+for (const [id, key, conv] of [['mode', 'mode', String], ['rot', 'rot', Number], ['north', 'north', Number]]) {
+  $(id).value = String(state[key]); $(id).onchange = e => { state[key] = conv(e.target.value); render(); };
+}
+$('radius').value = state.radiusKm; $('radius').oninput = e => { state.radiusKm = +e.target.value; render(); };
+$('radius').onchange = () => MAP.fit(state.radiusKm);
+$('sizeMode').value = state.sizeMode; $('sizeMode').onchange = e => {
+  if (e.target.value === 'km') state.radiusKm = Math.min(300, Math.max(0.5, Math.round(radiusKm() * 2) / 2)); // 今の見た目の大きさを引き継ぐ
+  state.sizeMode = e.target.value; $('radius').value = state.radiusKm; render(); };
+$('pct').value = state.screenPct; $('pct').oninput = e => { state.screenPct = +e.target.value; render(); };
+$('mapCenter').onclick = () => { state.center = MAP.center(); render(); };
+const showBase = () => { if (state.sizeMode === 'km') MAP.fit(state.radiusKm); else MAP.pan(state.center); };
+$('inner').checked = state.inner; $('inner').onchange = e => { state.inner = e.target.checked; render(); };
+$('labels').checked = state.labels; $('labels').onchange = e => { state.labels = e.target.checked; render(); };
+$('opacity').value = state.opacity; $('opacity').oninput = e => { state.opacity = +e.target.value; render(); };
+
+async function setBase() {
+  const q = $('addr').value.trim(); if (!q) return;
+  $('go').disabled = true;
+  try { const r = await geocode(q); $('addr').blur(); if (isMobile()) setSheet(false);
+    state.center = { lat: r.lat, lng: r.lng }; showBase(); render();
+    $('info').textContent = '拠点: ' + r.name; }
+  catch (err) { alert('住所が見つかりませんでした: ' + err.message); }
+  finally { $('go').disabled = false; }
+}
+$('go').onclick = setBase;
+$('addr').onkeydown = e => { if (e.key === 'Enter') setBase(); };
+$('here').onclick = () => navigator.geolocation?.getCurrentPosition(
+  p => { state.center = { lat: p.coords.latitude, lng: p.coords.longitude }; MAP.pan(state.center); render(); },
+  () => alert('現在地を取得できませんでした'));
+
+let gkey = ''; try { gkey = localStorage.getItem('reisui-gkey') || ''; } catch {}
+$('gkey').value = gkey;
+$('saveKey').onclick = () => { try { localStorage.setItem('reisui-gkey', $('gkey').value.trim()); } catch {} location.reload(); };
+
+(async () => {
+  try { if (gkey) { await GoogleMap.init($('map'), gkey); MAP = GoogleMap; } else throw 0; }
+  catch { await LeafletMap.init($('map')); MAP = LeafletMap; }
+  render(); measurePeek(); showBase(); render();
+  setTimeout(() => { const p0 = peek; measurePeek(); if (peek !== p0) { showBase(); render(); } }, 400);
+})();
+</script>
+</body>
+</html>
