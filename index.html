@@ -350,11 +350,21 @@ const GoogleMap = {
 
 let MAP;
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed: ' + src)); document.head.appendChild(s); }); }
+/* 住所検索: 番地入りの日本の住所は国土地理院、施設名はOpenStreetMap(Nominatim)を優先し、だめならもう一方で探す */
+async function gsiSearch(q) {
+  const r = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(q)}`).then(r => r.json());
+  return r.length ? { lat: r[0].geometry.coordinates[1], lng: r[0].geometry.coordinates[0], name: r[0].properties.title } : null;
+}
+async function osmSearch(q) {
+  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ja&q=${encodeURIComponent(q)}`).then(r => r.json());
+  return r.length ? { lat: +r[0].lat, lng: +r[0].lon, name: r[0].display_name } : null;
+}
 async function geocode(q) {
   if (MAP.geocode) return MAP.geocode(q);
-  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ja&q=${encodeURIComponent(q)}`).then(r => r.json());
-  if (!r.length) throw new Error('見つかりませんでした');
-  return { lat: +r[0].lat, lng: +r[0].lon, name: r[0].display_name };
+  const isAddress = /[0-9０-９一二三四五六七八九十]+\s*(丁目|番|号|-|－|ー)|[0-9０-９]/.test(q);
+  const order = isAddress ? [gsiSearch, osmSearch] : [osmSearch, gsiSearch];
+  for (const f of order) { try { const r = await f(q); if (r) return r; } catch {} }
+  throw new Error('見つかりませんでした。番地を省く・施設名で試すなどしてください');
 }
 
 /* ---- 盤(SVG) ---- */
@@ -456,8 +466,9 @@ async function setBase() {
   $('go').disabled = true;
   try { const r = await geocode(q); $('addr').blur(); if (isMobile()) setSheet(false);
     state.center = { lat: r.lat, lng: r.lng }; showBase(); render();
-    $('info').textContent = '拠点: ' + r.name; }
-  catch (err) { alert('住所が見つかりませんでした: ' + err.message); }
+    $('info').textContent = '拠点: ' + r.name;
+    $('tipBody').textContent = '拠点に設定: ' + r.name; $('maptip').classList.add('show'); }
+  catch (err) { alert('住所が見つかりませんでした。' + err.message.replace('見つかりませんでした。', '')); }
   finally { $('go').disabled = false; }
 }
 $('go').onclick = setBase;
