@@ -45,8 +45,9 @@
   .maplabel .p { font-size:11px; color:#9d174d; }
   .maplabel .n { font-size:10px; color:#fff; background:var(--accent); border-radius:4px; padding:0 4px; text-shadow:none; }
   .leaflet-div-icon.lbl { background:none; border:none; }
-  .pinbox { width:64px; height:30px; display:flex; align-items:flex-end; justify-content:center; font-size:13px; font-weight:800; color:#111;
-    text-shadow:0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; cursor:grab; white-space:nowrap; }
+  .pinbox { position:relative; width:44px; height:46px; cursor:grab; }
+  .pinbox span { position:absolute; left:36px; top:2px; font-size:13px; font-weight:800; color:#111; white-space:nowrap; pointer-events:none;
+    text-shadow:0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; }
   .pinbox:active { cursor:grabbing; }
   .leaflet-div-icon.lbl .maplabel { position:relative; }
   #mapwrap { position:relative; }
@@ -278,6 +279,11 @@ function buildShapes() {
 }
 
 /* ---- 地図アダプタ ---- */
+/* 拠点ピン: SVGの先端(22,45)がちょうど拠点の座標に来るよう iconAnchor と一致させる */
+const PIN_HTML = `<div class="pinbox" title="ドラッグで拠点を移動">
+  <svg width="24" height="34" viewBox="0 0 24 34" style="position:absolute;left:10px;bottom:1px">
+    <path d="M12 33C12 33 2 19.5 2 12a10 10 0 0 1 20 0c0 7.5-10 21-10 21z" fill="#d9467a" stroke="#fff" stroke-width="2"/>
+    <circle cx="12" cy="12" r="4" fill="#fff"/></svg><span>拠点</span></div>`;
 const LeafletMap = {
   async init(el) {
     await loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
@@ -287,7 +293,7 @@ const LeafletMap = {
     this.map.on('zoomstart', () => { if (state.sizeMode === 'screen') this.layer.remove(); });
     this.map.on('zoomend', () => { this.layer.addTo(this.map); if (state.sizeMode === 'screen') this.draw(buildShapes()); });
     this.pin = L.marker([state.center.lat, state.center.lng], { draggable: true, zIndexOffset: 1000,
-      icon: L.divIcon({ className: 'lbl', html: '<div class="pinbox" title="ドラッグで拠点を移動">📍拠点</div>', iconSize: [64, 30], iconAnchor: [32, 28] }) }).addTo(this.map);
+      icon: L.divIcon({ className: 'lbl', html: PIN_HTML, iconSize: [44, 46], iconAnchor: [22, 45] }) }).addTo(this.map);
     this.pin.on('drag', e => { const ll = e.target.getLatLng(); state.center = { lat: ll.lat, lng: ll.lng }; this.draw(buildShapes()); });
     this.pin.on('dragend', () => render());
   },
